@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>疏散仿真可视化报告 · RL-ACO vs 基线</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #0f1216; color: #dbe2ea;
+    font: 14px/1.5 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  header { padding: 22px 28px 14px; border-bottom: 1px solid #232a33; }
+  header h1 { margin: 0 0 6px; font-size: 20px; }
+  header p { margin: 0; color: #8a97a6; font-size: 13px; }
+  main { padding: 20px 28px 60px; max-width: 1180px; margin: 0 auto; }
+  section { margin-bottom: 34px; }
+  section h2 {
+    font-size: 16px; margin: 0 0 12px; color: #eef2f6;
+    border-left: 3px solid #2fb7ff; padding-left: 10px;
+  }
+  .card { background: #151a20; border: 1px solid #232a33; border-radius: 10px; padding: 16px; }
+  .grid { display: grid; gap: 16px; }
+  .g2 { grid-template-columns: 1fr 1fr; }
+  .g3 { grid-template-columns: 1fr 1fr 1fr; }
+  @media (max-width: 900px) { .g2, .g3 { grid-template-columns: 1fr; } }
+  canvas.chart { width: 100%; height: 320px; display: block; }
+  canvas.chart-tall { width: 100%; height: 380px; display: block; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; font-size: 12px; color: #9aa6b3; }
+  .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .meta { color: #8a97a6; font-size: 12px; margin-top: 6px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { padding: 7px 10px; text-align: right; border-bottom: 1px solid #232a33; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: #9aa6b3; font-weight: 600; }
+  td.win { color: #6fe08a; font-weight: 700; }
+  /* 回放控制 */
+  .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  .controls button {
+    background: #1e2630; color: #e6edf3; border: 1px solid #2c3642;
+    border-radius: 6px; padding: 7px 16px; cursor: pointer; font-size: 13px;
+  }
+  .controls button:hover { background: #27313d; }
+  input[type=range] { flex: 1; min-width: 200px; accent-color: #2fb7ff; }
+  .replay-wrap { position: relative; }
+  canvas#replay { width: 100%; height: 560px; display: block; background: #0b0e12; border-radius: 8px; }
+  .replay-hud { position: absolute; top: 10px; left: 12px; font: 12px ui-monospace, monospace; color: #cfe0ee; background: rgba(0,0,0,0.5); padding: 6px 9px; border-radius: 6px; pointer-events: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>疏散仿真可视化报告</h1>
+  <p>有限可见度/不熟悉环境模型 · 静态标识 + 动态导引员 · 60×40 m 多房间 · 100 人 · spread 火源 · 600 s 上限</p>
+</header>
+<main>
+  <section>
+    <h2>算法对比（12 局，去掉最快/最慢取中位）</h2>
+    <div class="card">
+      <canvas id="t95-chart" class="chart-tall"></canvas>
+      <div class="legend" id="t95-legend"></div>
+      <div class="meta">柱高 = 去极中位 T95；散点 = 各局 T95（灰色为超时未计入）。越低越好。</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>疏散进度 / 恐惧 / 密度（12 局均值曲线）</h2>
+    <div class="grid g3">
+      <div class="card"><canvas id="evac-chart" class="chart"></canvas><div class="legend" id="evac-legend"></div></div>
+      <div class="card"><canvas id="fear-chart" class="chart"></canvas><div class="legend" id="fear-legend"></div></div>
+      <div class="card"><canvas id="dens-chart" class="chart"></canvas><div class="legend" id="dens-legend"></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>出口使用分布（12 局均值）</h2>
+    <div class="card">
+      <canvas id="exit-chart" class="chart"></canvas>
+      <div class="legend" id="exit-legend"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>单局回放（RL-ACO：标识 + 导引员）</h2>
+    <div class="card">
+      <div class="replay-wrap">
+        <canvas id="replay"></canvas>
+        <div class="replay-hud" id="replay-hud"></div>
+      </div>
+      <div class="controls">
+        <button id="btn-play">▶ 播放</button>
+        <input type="range" id="scrub" min="0" max="1000" value="0">
+        <span id="time-label">t = 0.0 s</span>
+        <select id="speed">
+          <option value="0.25">0.25×</option>
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+          <option value="4">4×</option>
+          <option value="8">8×</option>
+        </select>
+        <span class="meta" id="replay-legend">圆点=行人（色随恐惧 绿→红）· 白圈=不熟悉者 · 青圈=导引员 · 黄块=静态标识</span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="js/viz-data.js"></script>
+<script>
+(function () {
+  'use strict';
+  const D = window.EV_VIZ_DATA;
+  if (!D) { document.body.innerHTML = '<p style="padding:40px">未找到 js/viz-data.js（请先运行 node tools/viz.js 生成）。</p>'; return; }
+
+  const MODES = D.benchmark.modes;
+  const COLORS = { 'Dijkstra': '#5b8dd9', 'A*': '#8e7cc3', 'ACO': '#d9865b', 'RL-ACO': '#3fc46a' };
+
+  // ---------- 通用绘图 ----------
+  function setupCanvas(id, logicalH) {
+    const cv = document.getElementById(id);
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth || 600;
+    cv.width = w * dpr;
+    cv.height = logicalH * dpr;
+    cv.style.height = logicalH + 'px';
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { cv, ctx, w, h: logicalH };
+  }
+
+  // ---------- T95 柱状图 ----------
+  (function drawT95() {
+    const { ctx, w, h } = setupCanvas('t95-chart', 380);
+    const P = { L: 60, T: 20, R: 20, B: 46 };
+    const plotW = w - P.L - P.R, plotH = h - P.T - P.B;
+    const yMax = 600;
+    const perMode = D.benchmark.perMode;
+    const n = MODES.length;
+    const bw = plotW / n;
+    ctx.clearRect(0, 0, w, h);
+
+    // 网格 + 轴
+    ctx.strokeStyle = '#232a33'; ctx.fillStyle = '#8a97a6'; ctx.font = '11px ui-monospace, monospace';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    for (let v = 0; v <= 600; v += 100) {
+      const y = P.T + plotH * (1 - v / yMax);
+      ctx.beginPath(); ctx.moveTo(P.L, y); ctx.lineTo(w - P.R, y); ctx.stroke();
+      ctx.fillText(v + 's', P.L - 8, y);
+    }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (let i = 0; i < n; i++) {
+      const cx = P.L + bw * i + bw / 2;
+      const s = perMode[MODES[i]].summary;
+      const tm = s.trimmedMedian;
+      const hbar = tm === null ? 0 : plotH * (tm / yMax);
+      ctx.fillStyle = COLORS[MODES[i]];
+      ctx.fillRect(cx - bw * 0.28, P.T + plotH - hbar, bw * 0.56, hbar);
+      // 中位数值（无有效中位则标「超时」）
+      ctx.fillStyle = '#eef2f6'; ctx.font = 'bold 12px ui-monospace, monospace';
+      ctx.fillText(tm === null ? '超时' : tm.toFixed(0) + 's', cx, P.T + plotH - hbar - 14);
+      // 各局散点
+      const t95 = perMode[MODES[i]].t95;
+      for (let k = 0; k < t95.length; k++) {
+        const tv = t95[k];
+        const jx = cx + (k - t95.length / 2 + 0.5) * (bw * 0.5 / Math.max(1, t95.length - 1));
+        if (tv === null) {
+          ctx.fillStyle = '#5a6470';
+          ctx.fillRect(jx - 3, P.T + plotH - 8, 6, 6);
+        } else {
+          const yv = P.T + plotH * (1 - tv / yMax);
+          ctx.fillStyle = COLORS[MODES[i]];
+          ctx.beginPath(); ctx.arc(jx, yv, 3, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      // 模式名
+      ctx.fillStyle = '#dbe2ea'; ctx.font = '12px sans-serif';
+      ctx.fillText(MODES[i], cx, h - P.B + 22);
+    }
+    // 超时标记说明
+    ctx.fillStyle = '#5a6470'; ctx.fillRect(P.L, h - 14, 6, 6);
+    ctx.fillStyle = '#8a97a6'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText('灰块 = 超时（T95 未达成，未计入中位）', P.L + 12, h - 10);
+
+    document.getElementById('t95-legend').innerHTML = MODES.map(m =>
+      `<span><span class="sw" style="background:${COLORS[m]}"></span>${m}</span>`).join('');
+  })();
+
+  // ---------- 时间序列曲线 ----------
+  function drawSeries(id, key, yLabel, legendId, yMaxFn) {
+    const { ctx, w, h } = setupCanvas(id, 320);
+    const P = { L: 42, T: 16, R: 14, B: 30 };
+    const plotW = w - P.L - P.R, plotH = h - P.T - P.B;
+    ctx.clearRect(0, 0, w, h);
+    const S = D.benchmark.sampleInterval;
+    const nSamp = D.benchmark.perMode[MODES[0]][key][0].length;
+    const Tmax = (nSamp - 1) * S;
+    const perMode = D.benchmark.perMode;
+
+    // 求各曲线 y 上限
+    let yMax = 0;
+    for (const m of MODES) {
+      const rows = perMode[m][key];
+      for (const r of rows) for (const v of r) if (v > yMax) yMax = v;
+    }
+    if (yMaxFn) yMax = yMaxFn(yMax);
+
+    // 网格
+    ctx.strokeStyle = '#232a33'; ctx.fillStyle = '#8a97a6'; ctx.font = '10px ui-monospace, monospace';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    const ySteps = 4;
+    for (let i = 0; i <= ySteps; i++) {
+      const yv = yMax * i / ySteps;
+      const y = P.T + plotH * (1 - i / ySteps);
+      ctx.beginPath(); ctx.moveTo(P.L, y); ctx.lineTo(w - P.R, y); ctx.stroke();
+      ctx.fillText(yv >= 100 ? yv.toFixed(0) : yv.toFixed(1), P.L - 6, y);
+    }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (let tv = 0; tv <= Tmax; tv += 100) {
+      const x = P.L + plotH * 0 + plotW * (tv / Tmax);
+      ctx.beginPath(); ctx.moveTo(x, P.T); ctx.lineTo(x, P.T + plotH); ctx.stroke();
+      ctx.fillText(tv + 's', x, P.T + plotH + 6);
+    }
+
+    // 曲线（12 局均值）
+    for (const m of MODES) {
+      const rows = perMode[m][key];
+      ctx.strokeStyle = COLORS[m]; ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < nSamp; i++) {
+        let s = 0; for (const r of rows) s += r[i];
+        const v = s / rows.length;
+        const x = P.L + plotW * (i / (nSamp - 1));
+        const y = P.T + plotH * (1 - v / yMax);
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    document.getElementById(legendId).innerHTML = MODES.map(m =>
+      `<span><span class="sw" style="background:${COLORS[m]}"></span>${m}</span>`).join('');
+  }
+  drawSeries('evac-chart', 'evac', '%', 'evac-legend', () => 100);
+  drawSeries('fear-chart', 'fear', 'fear', 'fear-legend', (m) => Math.min(1, m));
+  drawSeries('dens-chart', 'density', 'ρ', 'dens-legend', null);
+
+  // ---------- 出口使用 ----------
+  (function drawExit() {
+    const { ctx, w, h } = setupCanvas('exit-chart', 320);
+    const P = { L: 42, T: 16, R: 14, B: 30 };
+    const plotW = w - P.L - P.R, plotH = h - P.T - P.B;
+    ctx.clearRect(0, 0, w, h);
+    const perMode = D.benchmark.perMode;
+    const nExit = 6;
+    const nMode = MODES.length;
+    const groupW = plotW / nExit;
+    const bw = groupW / (nMode + 1);
+    // 每出口每模式均值
+    let yMax = 0;
+    const meanUse = MODES.map(m => {
+      const rows = perMode[m].exitUse;
+      const acc = new Array(nExit).fill(0);
+      for (const r of rows) for (let e = 0; e < nExit; e++) acc[e] += r[e];
+      const means = acc.map(v => v / rows.length);
+      for (const v of means) if (v > yMax) yMax = v;
+      return means;
+    });
+    yMax *= 1.15;
+
+    ctx.strokeStyle = '#232a33'; ctx.fillStyle = '#8a97a6'; ctx.font = '10px ui-monospace, monospace';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    for (let i = 0; i <= 4; i++) {
+      const yv = yMax * i / 4;
+      const y = P.T + plotH * (1 - i / 4);
+      ctx.beginPath(); ctx.moveTo(P.L, y); ctx.lineTo(w - P.R, y); ctx.stroke();
+      ctx.fillText(yv.toFixed(0), P.L - 6, y);
+    }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (let e = 0; e < nExit; e++) {
+      const cx = P.L + groupW * e + groupW / 2;
+      for (let mi = 0; mi < nMode; mi++) {
+        const x = cx - groupW / 2 + (mi + 1) * bw;
+        const v = meanUse[mi][e];
+        const bh = plotH * (v / yMax);
+        ctx.fillStyle = COLORS[MODES[mi]];
+        ctx.fillRect(x - bw * 0.4, P.T + plotH - bh, bw * 0.8, bh);
+      }
+      const en = D.exits[e];
+      ctx.fillStyle = '#dbe2ea'; ctx.font = '12px sans-serif';
+      ctx.fillText(en.name, cx, P.T + plotH + 8);
+    }
+    document.getElementById('exit-legend').innerHTML = MODES.map(m =>
+      `<span><span class="sw" style="background:${COLORS[m]}"></span>${m}</span>`).join('');
+  })();
+
+  // ---------- 单局回放 ----------
+  (function replay() {
+    const cv = document.getElementById('replay');
+    const ctx = cv.getContext('2d');
+    const R = D.replay;
+    const room = D.room;
+    let playing = false, speed = 1, idx = 0, lastTs = 0;
+    const totalFrames = R.frames.length;
+
+    function fireIntensity(t, f) {
+      if (t < f.t0) return 0;
+      const dt = t - f.t0;
+      return Math.min(1, (D.fire.alpha * dt * dt) / D.fire.saturation);
+    }
+    function fireRadius(t, f) {
+      const I = fireIntensity(t, f);
+      return D.fire.baseRadius + I * (D.fire.maxRadius - D.fire.baseRadius);
+    }
+    function fireTotal(x, y, t) {
+      let total = 0;
+      for (const f of D.ignitions) {
+        const I = fireIntensity(t, f);
+        if (I <= 0) continue;
+        const Rr = fireRadius(t, f);
+        const d = Math.hypot(x - f.x, y - f.y);
+        const plume = I * Math.exp(-(d * d) / (2 * Math.max(Rr, 1.5) ** 2));
+        total += plume * 1.2;
+      }
+      return Math.min(1, total);
+    }
+
+    function drawFrame(i) {
+      const fr = R.frames[i];
+      const t = fr.t;
+      const dpr = window.devicePixelRatio || 1;
+      const w = cv.clientWidth;
+      const h = cv.clientHeight;
+      if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // 适配居中缩放
+      const s = Math.min((w - 20) / room.width, (h - 20) / room.height);
+      const ox = (w - room.width * s) / 2, oy = (h - room.height * s) / 2;
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = '#0b0e12';
+      ctx.fillRect(0, 0, w, h);
+      ctx.save();
+      ctx.translate(ox, oy); ctx.scale(s, s);
+
+      // 危害场（粗网格伪彩色）
+      const step = 2;
+      for (let gx = 0; gx < room.width; gx += step) {
+        for (let gy = 0; gy < room.height; gy += step) {
+          const v = fireTotal(gx + step / 2, gy + step / 2, t);
+          if (v < 0.02) continue;
+          ctx.fillStyle = `rgba(255,${Math.round(160 * (1 - v * 0.7))},${Math.round(80 * (1 - v * 0.9))},${0.4 * v})`;
+          ctx.fillRect(gx, gy, step, step);
+        }
+      }
+
+      // 障碍物
+      for (const ob of D.obstacles) {
+        if (ob.kind === 'seat') { ctx.fillStyle = '#41506a'; }
+        else if (ob.kind === 'column') { ctx.fillStyle = '#2a2e35'; }
+        else { ctx.fillStyle = '#2a2e35'; }
+        ctx.fillRect(ob.x0, ob.y0, ob.x1 - ob.x0, ob.y1 - ob.y0);
+      }
+
+      // 出口（火灾封堵 → 红）
+      for (const e of D.exits) {
+        const blocked = fireTotal(e.node.x, e.node.y, t) >= 0.6;
+        ctx.fillStyle = blocked ? '#c0392b' : '#27ae60';
+        ctx.fillRect(e.x, e.y, e.width, e.height);
+      }
+
+      // 静态标识
+      for (const sg of D.signs) {
+        const ex = D.exits[sg.exit];
+        ctx.strokeStyle = 'rgba(255,200,0,0.35)'; ctx.lineWidth = 0.06;
+        ctx.beginPath(); ctx.arc(sg.x, sg.y, D.signRadius, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = '#ffc400';
+        ctx.fillRect(sg.x - 0.3, sg.y - 0.3, 0.6, 0.6);
+        const dx = ex.node.x - sg.x, dy = ex.node.y - sg.y;
+        const dl = Math.hypot(dx, dy) || 1;
+        ctx.strokeStyle = '#ffc400'; ctx.lineWidth = 0.1;
+        ctx.beginPath();
+        ctx.moveTo(sg.x + dx / dl * 0.4, sg.y + dy / dl * 0.4);
+        ctx.lineTo(sg.x + dx / dl * 1.3, sg.y + dy / dl * 1.3);
+        ctx.stroke();
+      }
+
+      // 导引员
+      for (const ge of fr.guides) {
+        const ex = D.exits[ge];
+        ctx.strokeStyle = 'rgba(0,255,220,0.5)'; ctx.lineWidth = 0.08;
+        ctx.beginPath(); ctx.arc(ex.node.x, ex.node.y, D.guideRadius, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = '#00ffdc';
+        ctx.beginPath(); ctx.arc(ex.node.x, ex.node.y, 0.5, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // 行人
+      const A = fr.agents;
+      for (let k = 0; k < A.length; k += 5) {
+        const x = A[k], y = A[k + 1], fear = A[k + 2], unf = A[k + 3], guided = A[k + 4];
+        const r = Math.round(255 * Math.min(1, fear * 1.3 + 0.1));
+        const g = Math.round(255 * (1 - fear * 0.9));
+        const b = Math.round(255 * (1 - fear));
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.beginPath(); ctx.arc(x, y, 0.28, 0, Math.PI * 2); ctx.fill();
+        if (unf) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.08; ctx.stroke(); }
+        if (guided) { ctx.strokeStyle = '#00ffdc'; ctx.lineWidth = 0.12; ctx.stroke(); }
+      }
+
+      ctx.restore();
+
+      // HUD
+      const evac = R.total - A.length / 5;
+      document.getElementById('replay-hud').textContent =
+        `t = ${t.toFixed(1)} s   疏散 ${evac}/${R.total}   恐惧均值 ${fr.meanFear.toFixed(2)}`;
+    }
+
+    function setIdx(i) {
+      idx = Math.max(0, Math.min(totalFrames - 1, i));
+      drawFrame(idx);
+      document.getElementById('scrub').value = Math.round(idx / (totalFrames - 1) * 1000);
+      document.getElementById('time-label').textContent = 't = ' + R.frames[idx].t.toFixed(1) + ' s';
+    }
+
+    document.getElementById('btn-play').addEventListener('click', () => {
+      playing = !playing;
+      document.getElementById('btn-play').textContent = playing ? '⏸ 暂停' : '▶ 播放';
+      if (playing) lastTs = performance.now();
+    });
+    document.getElementById('scrub').addEventListener('input', (e) => {
+      playing = false;
+      document.getElementById('btn-play').textContent = '▶ 播放';
+      setIdx(Math.round(e.target.value / 1000 * (totalFrames - 1)));
+    });
+    document.getElementById('speed').addEventListener('change', (e) => { speed = parseFloat(e.target.value); });
+
+    function loop(now) {
+      if (playing) {
+        const dt = (now - lastTs) / 1000;
+        lastTs = now;
+        const adv = dt * speed / R.sampleInterval;
+        if (adv >= 1) {
+          const ni = Math.floor(idx + adv);
+          if (ni >= totalFrames - 1) { idx = totalFrames - 1; playing = false; document.getElementById('btn-play').textContent = '▶ 播放'; }
+          else idx = ni;
+          drawFrame(idx);
+          document.getElementById('scrub').value = Math.round(idx / (totalFrames - 1) * 1000);
+          document.getElementById('time-label').textContent = 't = ' + R.frames[idx].t.toFixed(1) + ' s';
+        }
+      }
+      requestAnimationFrame(loop);
+    }
+    setIdx(0);
+    requestAnimationFrame(loop);
+  })();
+})();
+</script>
+</body>
+</html>
