@@ -49,7 +49,7 @@
 <body>
 <header>
   <h1>疏散仿真可视化报告</h1>
-  <p>有限可见度/不熟悉环境模型 · 静态标识 + 动态导引员 · 60×40 m 多房间 · 100 人 · spread 火源 · 600 s 上限</p>
+  <p>有限可见度/不熟悉环境模型 · 静态标识 + 移动危害拦截导引员 · 60×40 m 多房间 · 100 人 · spread 火源 · 600 s 上限</p>
 </header>
 <main>
   <section>
@@ -66,7 +66,7 @@
     <div class="card">
       <canvas id="t95-ablation" class="chart-med"></canvas>
       <div class="legend" id="t95-ablation-legend"></div>
-      <div class="meta">固定 A* 路由，逐层加支持：无标识无导引 → +静态标识 → +固定导引员 → +随机导引员 → +自适应导引员(=RL-ACO)。</div>
+      <div class="meta">固定 A* 路由，逐层加支持：无标识无导引 → +静态标识 → +固定导引员 → +随机导引员 → +移动危害拦截导引员(=RL-ACO)。</div>
     </div>
   </section>
 
@@ -88,7 +88,7 @@
   </section>
 
   <section>
-    <h2>单局回放（RL-ACO：标识 + 导引员）</h2>
+    <h2>单局回放（RL-ACO：标识 + 移动危害拦截导引员）</h2>
     <div class="card">
       <div class="replay-wrap">
         <canvas id="replay"></canvas>
@@ -371,12 +371,12 @@
         ctx.stroke();
       }
 
-      for (const ge of fr.guides) {
-        const ex = D.exits[ge];
+      for (const gp of fr.guides) {
+        const gx = gp[0], gy = gp[1];
         ctx.strokeStyle = 'rgba(0,255,220,0.5)'; ctx.lineWidth = 0.08;
-        ctx.beginPath(); ctx.arc(ex.node.x, ex.node.y, D.guideRadius, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(gx, gy, D.guideRadius, 0, Math.PI * 2); ctx.stroke();
         ctx.fillStyle = '#00ffdc';
-        ctx.beginPath(); ctx.arc(ex.node.x, ex.node.y, 0.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(gx, gy, 0.5, 0, Math.PI * 2); ctx.fill();
       }
 
       const A = fr.agents;
