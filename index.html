@@ -71,7 +71,7 @@
   </section>
 
   <section>
-    <h2>疏散进度 / 恐惧 / 密度（算法对比，12 局均值曲线）</h2>
+    <h2>疏散进度 / 恐惧 / 密度（算法对比，多批均值曲线）</h2>
     <div class="grid g3">
       <div class="card"><canvas id="evac-chart" class="chart"></canvas><div class="legend" id="evac-legend"></div></div>
       <div class="card"><canvas id="fear-chart" class="chart"></canvas><div class="legend" id="fear-legend"></div></div>
@@ -80,7 +80,7 @@
   </section>
 
   <section>
-    <h2>出口使用分布（算法对比，12 局均值）</h2>
+    <h2>出口使用分布（算法对比，多批均值）</h2>
     <div class="card">
       <canvas id="exit-chart" class="chart"></canvas>
       <div class="legend" id="exit-legend"></div>
@@ -190,8 +190,8 @@
   }
   drawT95('t95-main', 't95-main-legend', GROUPS.main.keys, 380);
   drawT95('t95-ablation', 't95-ablation-legend', GROUPS.ablation.keys, 300);
-  document.getElementById('t95-main-title').textContent = GROUPS.main.title + '（12 局，去掉最快/最慢取中位）';
-  document.getElementById('t95-ablation-title').textContent = GROUPS.ablation.title + '（12 局，去掉最快/最慢取中位）';
+  document.getElementById('t95-main-title').textContent = GROUPS.main.title + '（' + D.benchmark.runs + ' 局，去掉最快/最慢取中位）';
+  document.getElementById('t95-ablation-title').textContent = GROUPS.ablation.title + '（' + D.benchmark.runs + ' 局，去掉最快/最慢取中位）';
 
   // ---------- 时间序列曲线 ----------
   function drawSeries(id, keys, dataKey, legendId, yMaxFn) {
