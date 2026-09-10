@@ -1,7 +1,7 @@
 # 人群疏散仿真实验报告：有限可见度下的 RL-ACO 路径规划
 
 > 在线可视化报告：<https://feather0000.github.io/Evacuation_Report/>
-> 完整英文报告：[REPORT.md](REPORT.md)
+> 完整英文报告：[REPORT.md](REPORT.md) · 英文 PDF 报告：[report.pdf](report.pdf)
 
 ## 摘要
 
