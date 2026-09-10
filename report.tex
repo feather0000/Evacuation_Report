@@ -21,6 +21,12 @@
 \definecolor{cFixed}{RGB}{224,169,96}
 \definecolor{cRandom}{RGB}{95,184,160}
 
+% 柱状图辅助：\Bar{中心x}{高度(秒)}{颜色}  —— 画柱 + 顶部数值
+\newcommand{\Bar}[3]{%
+  \fill[#3] (#1-0.6,0) rectangle (#1+0.6,#2);
+  \node[above,font=\scriptsize] at (#1,#2) {#2};
+}
+
 \title{\bfseries Adaptive Evacuation Route Planning under\\ Crowded and Dynamic Fire Conditions}
 \author{ZHENG Wansu (202520577)\\ Advisor: Prof. Hiroshi Furukawa}
 \date{}
@@ -178,21 +184,21 @@ multi-room topology (7 of 24 runs time out).
 
 \begin{figure}[h]
 \centering
-\begin{tikzpicture}
-\begin{axis}[
-  ybar, bar width=26pt,
-  ymin=0, ymax=600, ylabel={T95 (s)},
-  xtick={0,1,2,3}, xticklabels={Dijkstra, A*, ACO, RL-ACO},
-  nodes near coords, nodes near coords align={vertical},
-  every node near coord/.append style={font=\scriptsize},
-  ymajorgrids=true, enlarge x limits=0.25,
-  width=0.88\textwidth, height=6.5cm
-]
-\addplot[fill=cDijkstra] coordinates {(0,205.9)};
-\addplot[fill=cAstar] coordinates {(1,255.5)};
-\addplot[fill=cACO] coordinates {(2,476.1)};
-\addplot[fill=cRLACO] coordinates {(3,125.3)};
-\end{axis}
+\begin{tikzpicture}[y=0.008cm]
+\foreach \v in {0,100,...,600}{
+  \draw[gray!30] (0,\v) -- (10.5,\v);
+  \node[left,font=\scriptsize] at (0,\v) {\v};
+}
+\draw[->,thick] (0,0) -- (10.5,0);
+\Bar{1.5}{205.9}{cDijkstra}
+\Bar{4.0}{255.5}{cAstar}
+\Bar{6.5}{476.1}{cACO}
+\Bar{9.0}{125.3}{cRLACO}
+\node[below,font=\scriptsize] at (1.5,-0.4) {Dijkstra};
+\node[below,font=\scriptsize] at (4.0,-0.4) {A*};
+\node[below,font=\scriptsize] at (6.5,-0.4) {ACO};
+\node[below,font=\scriptsize] at (9.0,-0.4) {RL-ACO};
+\node[rotate=90,font=\scriptsize] at (-1.1,2.4) {T95 (s)};
 \end{tikzpicture}
 \caption{Trimmed-median T95 across the four routing algorithms (lower is better).}
 \end{figure}
@@ -218,24 +224,23 @@ A* + signs + random guides & 182.2 & 69 & 31.6 \\
 
 \begin{figure}[h]
 \centering
-\begin{tikzpicture}
-\begin{axis}[
-  ybar, bar width=22pt,
-  ymin=0, ymax=600, ylabel={T95 (s)},
-  xtick={0,1,2,3,4},
-  xticklabels={A* none, A*+signs, A*+fixed, A*+random, RL-ACO},
-  x tick label style={rotate=30, anchor=east, font=\scriptsize},
-  nodes near coords, nodes near coords align={vertical},
-  every node near coord/.append style={font=\scriptsize},
-  ymajorgrids=true, enlarge x limits=0.15,
-  width=0.88\textwidth, height=7cm
-]
-\addplot[fill=cNone] coordinates {(0,231.1)};
-\addplot[fill=cAstar] coordinates {(1,255.5)};
-\addplot[fill=cFixed] coordinates {(2,228.5)};
-\addplot[fill=cRandom] coordinates {(3,182.2)};
-\addplot[fill=cRLACO] coordinates {(4,125.3)};
-\end{axis}
+\begin{tikzpicture}[y=0.008cm]
+\foreach \v in {0,100,...,600}{
+  \draw[gray!30] (0,\v) -- (12.6,\v);
+  \node[left,font=\scriptsize] at (0,\v) {\v};
+}
+\draw[->,thick] (0,0) -- (12.6,0);
+\Bar{1.4}{231.1}{cNone}
+\Bar{4.0}{255.5}{cAstar}
+\Bar{6.6}{228.5}{cFixed}
+\Bar{9.2}{182.2}{cRandom}
+\Bar{11.8}{125.3}{cRLACO}
+\node[below,font=\scriptsize] at (1.4,-0.4) {A* none};
+\node[below,font=\scriptsize] at (4.0,-0.4) {A*+signs};
+\node[below,font=\scriptsize] at (6.6,-0.4) {A*+fixed};
+\node[below,font=\scriptsize] at (9.2,-0.4) {A*+random};
+\node[below,font=\scriptsize] at (11.8,-0.4) {RL-ACO};
+\node[rotate=90,font=\scriptsize] at (-1.1,2.4) {T95 (s)};
 \end{tikzpicture}
 \caption{Decision-support ablation: the mobile hazard-intercept guide is the only mechanism that
 improves T95, exposure, and trapped simultaneously.}
